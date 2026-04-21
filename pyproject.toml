@@ -5,10 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hello-world"
 version = "0.1.0"
-description = "Simple Python Hello World starter project"
+description = "Home budget planner with import dedupe and cashflow forecasting scaffold"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+	"streamlit>=1.44.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
