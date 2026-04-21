@@ -8,6 +8,7 @@ from .db import init_db
 from .importers import import_bank_csv, import_income_forecast_csv
 from .services import (
     add_planned_expense,
+    add_transfer,
     apply_classification_rules,
     calculate_daily_cashflow,
     calculate_daily_category_cashflow,
@@ -20,7 +21,9 @@ from .services import (
     list_categories,
     list_income_forecasts,
     list_planned_expenses,
+    list_transfers,
     list_unclassified_transactions,
+    recommend_goal_adjustments,
     set_actual_income,
     set_balance_snapshot,
     set_monthly_goal,
@@ -201,6 +204,27 @@ def run() -> None:
     if planned_expenses:
         st.dataframe(planned_expenses, use_container_width=True)
 
+    st.header("Transfers")
+    transfer_date = st.text_input("Transfer date (YYYY-MM-DD)")
+    transfer_from = st.text_input("From account", value="business")
+    transfer_to = st.text_input("To account", value="household")
+    transfer_amount = st.number_input("Transfer amount", value=0.0, step=50.0)
+    transfer_note = st.text_input("Transfer note")
+    if st.button("Save transfer") and transfer_date and transfer_from and transfer_to:
+        transfer_id = add_transfer(
+            db_path=db_path,
+            transfer_date=transfer_date,
+            from_account=transfer_from,
+            to_account=transfer_to,
+            amount_cents=_money_to_cents(transfer_amount),
+            note=transfer_note.strip() or None,
+        )
+        st.success(f"Transfer saved #{transfer_id}")
+
+    transfers = list_transfers(db_path)
+    if transfers:
+        st.dataframe(transfers, use_container_width=True)
+
     st.header("Balance Snapshot")
     snapshot_account = st.text_input("Snapshot account", value="household")
     snapshot_date = st.text_input("Snapshot date (YYYY-MM-DD)")
@@ -277,6 +301,7 @@ def run() -> None:
             end_date=end_date,
             opening_balance_cents=_money_to_cents(opening_balance),
             expense_mode=expense_mode,
+            account=forecast_account,
         )
         st.subheader("Projected Cash Flow")
         st.dataframe(cashflow, use_container_width=True)
@@ -288,6 +313,33 @@ def run() -> None:
         variances = detect_balance_variance(db_path, forecast_account, cashflow)
         st.subheader("Variance vs Actual Snapshot")
         st.dataframe(variances, use_container_width=True)
+
+    st.header("Adjustment Recommendations")
+    rec_year = st.number_input("Recommendation year", min_value=2020, max_value=2100, value=2026)
+    rec_month = st.number_input("Recommendation month", min_value=1, max_value=12, value=1)
+    rec_start = st.text_input("Recommendation window start (YYYY-MM-DD)")
+    rec_end = st.text_input("Recommendation window end (YYYY-MM-DD)")
+    rec_opening = st.number_input("Recommendation opening balance", value=0.0, step=50.0)
+    rec_account = st.text_input("Recommendation account", value="household")
+    rec_threshold = st.number_input("Negative variance threshold", value=10.0, step=10.0)
+    if st.button("Generate recommendations") and rec_start and rec_end:
+        rec_flow = calculate_daily_cashflow(
+            db_path=db_path,
+            start_date=rec_start,
+            end_date=rec_end,
+            opening_balance_cents=_money_to_cents(rec_opening),
+            expense_mode="expected",
+            account=rec_account,
+        )
+        recs = recommend_goal_adjustments(
+            db_path=db_path,
+            year=int(rec_year),
+            month=int(rec_month),
+            account=rec_account,
+            cashflow=rec_flow,
+            negative_variance_threshold_cents=_money_to_cents(rec_threshold),
+        )
+        st.dataframe(recs, use_container_width=True)
 
 
 if __name__ == "__main__":

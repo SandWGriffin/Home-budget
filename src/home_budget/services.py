@@ -240,6 +240,26 @@ def add_planned_expense(
     return int(cur.lastrowid)
 
 
+def add_transfer(
+    db_path: str | Path,
+    transfer_date: str,
+    from_account: str,
+    to_account: str,
+    amount_cents: int,
+    note: str | None = None,
+) -> int:
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO transfer_entry (transfer_date, from_account, to_account, amount_cents, note)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (transfer_date, from_account.strip(), to_account.strip(), amount_cents, note),
+        )
+        conn.commit()
+    return int(cur.lastrowid)
+
+
 def list_unclassified_transactions(db_path: str | Path) -> list[dict]:
     with connect(db_path) as conn:
         rows = conn.execute(
@@ -294,6 +314,46 @@ def list_planned_expenses(db_path: str | Path) -> list[dict]:
             """
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_transfers(db_path: str | Path) -> list[dict]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, transfer_date, from_account, to_account, amount_cents, note
+            FROM transfer_entry
+            ORDER BY transfer_date, id
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _transfer_net_by_day(
+    conn,
+    account: str,
+    start_date: str,
+    end_date: str,
+) -> dict[str, int]:
+    rows = conn.execute(
+        """
+        SELECT transfer_date, from_account, to_account, amount_cents
+        FROM transfer_entry
+        WHERE transfer_date >= ? AND transfer_date <= ?
+        """,
+        (start_date, end_date),
+    ).fetchall()
+    net_by_day: dict[str, int] = {}
+    for row in rows:
+        day = str(row["transfer_date"])
+        amount = int(row["amount_cents"])
+        net = 0
+        if row["to_account"] == account:
+            net += amount
+        if row["from_account"] == account:
+            net -= amount
+        if net:
+            net_by_day[day] = net_by_day.get(day, 0) + net
+    return net_by_day
 
 
 def _expected_expense_by_day(
@@ -414,6 +474,7 @@ def calculate_daily_cashflow(
     end_date: str,
     opening_balance_cents: int,
     expense_mode: Literal["actual", "expected"] = "actual",
+    account: str = "household",
 ) -> list[dict]:
     start = _to_date(start_date)
     end = _to_date(end_date)
@@ -422,6 +483,7 @@ def calculate_daily_cashflow(
 
     income_by_day: dict[str, int] = {}
     expense_by_day: dict[str, int]
+    transfer_net_by_day: dict[str, int]
 
     with connect(db_path) as conn:
         income_rows = conn.execute(
@@ -442,6 +504,8 @@ def calculate_daily_cashflow(
         else:
             expense_by_day = _actual_expense_by_day(conn, start_date, end_date)
 
+        transfer_net_by_day = _transfer_net_by_day(conn, account, start_date, end_date)
+
     running = opening_balance_cents
     output: list[dict] = []
     cursor = start
@@ -449,12 +513,14 @@ def calculate_daily_cashflow(
         iso = _to_iso(cursor)
         income = income_by_day.get(iso, 0)
         expense = expense_by_day.get(iso, 0)
-        running += income - expense
+        transfer_net = transfer_net_by_day.get(iso, 0)
+        running += income - expense + transfer_net
         output.append(
             {
                 "date": iso,
                 "income_cents": income,
                 "expense_cents": expense,
+                "transfer_net_cents": transfer_net,
                 "projected_balance_cents": running,
             }
         )
@@ -736,3 +802,80 @@ def generate_monthly_forecast(
             for row in goals
         ],
     }
+
+
+def recommend_goal_adjustments(
+    db_path: str | Path,
+    year: int,
+    month: int,
+    account: str,
+    cashflow: list[dict],
+    negative_variance_threshold_cents: int = 1000,
+) -> list[dict]:
+    recommendations: list[dict] = []
+
+    variances = detect_balance_variance(db_path, account, cashflow)
+    significant_negative = [
+        v for v in variances if int(v["variance_cents"]) <= -abs(negative_variance_threshold_cents)
+    ]
+    if significant_negative:
+        worst = min(significant_negative, key=lambda item: int(item["variance_cents"]))
+        recommendations.append(
+            {
+                "type": "cashflow_variance",
+                "priority": "high",
+                "date": worst["date"],
+                "message": (
+                    "Actual bank balance is below projection. "
+                    "Review income timing, transfers, and discretionary category goals."
+                ),
+                "variance_cents": int(worst["variance_cents"]),
+            }
+        )
+
+    statuses = category_month_status(db_path, year, month)
+    overspent = [s for s in statuses if int(s["remaining_cents"]) < 0]
+    for status in sorted(overspent, key=lambda s: int(s["remaining_cents"])):
+        recommendations.append(
+            {
+                "type": "category_overspend",
+                "priority": "medium",
+                "category": status["category"],
+                "message": "Category is over monthly goal. Consider increasing goal or reducing spend.",
+                "remaining_cents": int(status["remaining_cents"]),
+                "goal_cents": int(status["goal_cents"]),
+                "actual_spend_cents": int(status["actual_spend_cents"]),
+            }
+        )
+
+    savings_with_room = [
+        s
+        for s in statuses
+        if bool(s["is_savings_goal"]) and int(s["remaining_cents"]) > 0
+    ]
+    if significant_negative and savings_with_room:
+        top = sorted(savings_with_room, key=lambda s: int(s["remaining_cents"]), reverse=True)[:3]
+        for item in top:
+            recommendations.append(
+                {
+                    "type": "reallocate_savings",
+                    "priority": "medium",
+                    "category": item["category"],
+                    "message": (
+                        "Savings goal has remaining room. Consider temporary reallocation "
+                        "to cover near-term cash deficit."
+                    ),
+                    "remaining_cents": int(item["remaining_cents"]),
+                }
+            )
+
+    if not recommendations:
+        recommendations.append(
+            {
+                "type": "healthy",
+                "priority": "low",
+                "message": "No major variance or category overspend issues detected for this period.",
+            }
+        )
+
+    return recommendations

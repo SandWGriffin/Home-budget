@@ -103,6 +103,16 @@ def init_db(db_path: str | Path) -> None:
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 UNIQUE(account, snapshot_date)
             );
+
+            CREATE TABLE IF NOT EXISTS transfer_entry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                transfer_date TEXT NOT NULL,
+                from_account TEXT NOT NULL,
+                to_account TEXT NOT NULL,
+                amount_cents INTEGER NOT NULL,
+                note TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             """
         )
 

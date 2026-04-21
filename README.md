@@ -11,6 +11,8 @@ Starter implementation for a home budget tool focused on:
 - Planned expenses by date for expected spend tracking
 - Category goal performance (goal vs actual vs remaining)
 - Day-by-day category cashflow with expected vs actual variance
+- Transfer tracking between business and household accounts
+- Recommendation panel for goal adjustments when variance or overspend is detected
 - Daily cashflow projection
 - Variance checks against actual balance snapshots
 
@@ -34,11 +36,13 @@ streamlit run src/home_budget/ui.py
 - Classify new transactions and optionally create reusable auto-rules.
 - Enter monthly category goals (including savings categories).
 - Enter planned expense items by date for expected-cash planning.
+- Record transfers between business and household accounts.
 - Confirm actual income receipts against income forecast rows.
 - Generate monthly forecast and day-by-day cashflow in:
 	- `expected` mode (planned + recurring expenses)
 	- `actual` mode (posted bank transaction expenses)
 - View category goal performance and variance against bank balance snapshots.
+- Generate recommendation output to help adjust category goals when cashflow variance appears.
 
 ## CSV Formats
 
