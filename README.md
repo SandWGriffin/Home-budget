@@ -57,6 +57,19 @@ Optional bank columns:
 - bank_reference
 - balance
 
+Existing bank export format supported (the download format you provided):
+
+- `Date`, `Ref/Check`, `Description`, `Amount`, `Balance`, `Memo`, `Category`
+- Date format: `MM/DD/YYYY`
+- Importer skips `Daily Ledger Bal` rows
+- Pending rows are skipped by default (optional in UI)
+
+Existing export account detection:
+
+- Transfer text `from *448 to *535` with positive amount maps file account to personal checking (`...6535`)
+- Transfer text `from *448 to *535` with negative amount maps file account to business (`...4448`)
+- Transfer text `from *535 to *448` is interpreted inversely
+
 Income forecast required columns:
 
 - date (YYYY-MM-DD)

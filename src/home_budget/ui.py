@@ -5,7 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from .db import init_db
-from .importers import import_bank_csv, import_income_forecast_csv
+from .importers import import_bank_csv, import_existing_bank_export_csv, import_income_forecast_csv
 from .services import (
     add_planned_expense,
     add_transfer,
@@ -55,16 +55,40 @@ def run() -> None:
 
     st.header("Import Bank Transactions")
     bank_file = st.file_uploader("Bank CSV", type=["csv"], key="bank_file")
-    account = st.text_input("Account name", value="household")
+    import_format = st.selectbox(
+        "Bank import format",
+        ["normalized", "existing_export"],
+        help=(
+            "Use normalized for posted_date/description/amount CSVs. "
+            "Use existing_export for your current bank download format."
+        ),
+    )
+    account = st.text_input("Account name (normalized format)", value="household")
+    fallback_account = st.text_input(
+        "Fallback account (existing export)",
+        value="",
+        help="Used only if account cannot be inferred from transfer lines.",
+    )
+    include_pending = st.checkbox("Include pending rows (existing export)", value=False)
     if st.button("Import bank CSV") and bank_file is not None:
         tmp_path = Path("data/_bank_upload.csv")
         tmp_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path.write_bytes(bank_file.getvalue())
-        stats = import_bank_csv(db_path, tmp_path, account)
+        if import_format == "existing_export":
+            stats = import_existing_bank_export_csv(
+                db_path=db_path,
+                csv_path=tmp_path,
+                fallback_account=fallback_account.strip() or None,
+                include_pending=include_pending,
+            )
+        else:
+            stats = import_bank_csv(db_path, tmp_path, account)
         auto = apply_classification_rules(db_path)
         st.success(
             f"Imported: {stats['inserted']} new, {stats['duplicates']} duplicates skipped"
         )
+        if "account" in stats:
+            st.info(f"Detected account: {stats['account']}")
         st.info(f"Auto-classified {auto} transactions from saved rules")
 
     st.header("Import Income Forecast")
