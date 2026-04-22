@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hello-world"
+name = "home-budget"
 version = "0.1.0"
 description = "Home budget planner with import dedupe and cashflow forecasting scaffold"
 readme = "README.md"
