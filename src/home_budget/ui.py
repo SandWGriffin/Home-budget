@@ -293,10 +293,16 @@ def run() -> None:
                 "net_before_variable": _cents_to_money(
                     forecast["net_before_variable_cents"]
                 ),
+                "non_monthly_accrual_total": _cents_to_money(
+                    forecast["non_monthly_accrual_total_cents"]
+                ),
+                "net_after_accrual": _cents_to_money(forecast["net_after_accrual_cents"]),
             }
         )
         st.subheader("Recurring Items Included")
         st.dataframe(forecast["recurring_items"], use_container_width=True)
+        st.subheader("Non-Monthly Accrual Targets")
+        st.dataframe(forecast["accrual_items"], use_container_width=True)
         st.subheader("Category Monthly Goals")
         st.dataframe(forecast["category_goals"], use_container_width=True)
 

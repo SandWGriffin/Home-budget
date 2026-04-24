@@ -13,6 +13,7 @@ Starter implementation for a home budget tool focused on:
 - Day-by-day category cashflow with expected vs actual variance
 - Transfer tracking between business and household accounts
 - Recommendation panel for goal adjustments when variance or overspend is detected
+- Non-monthly recurring expense accrual targets (quarterly/annual)
 - Daily cashflow projection
 - Variance checks against actual balance snapshots
 
@@ -43,6 +44,7 @@ streamlit run src/home_budget/ui.py
 	- `actual` mode (posted bank transaction expenses)
 - View category goal performance and variance against bank balance snapshots.
 - Generate recommendation output to help adjust category goals when cashflow variance appears.
+- For quarterly/annual recurring expenses, use monthly accrual targets shown in forecast/status to set aside funds before due month.
 
 ## CSV Formats
 

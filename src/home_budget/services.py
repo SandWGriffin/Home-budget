@@ -38,6 +38,32 @@ def _recurs_in_month(anchor: date, cadence: str, target_year: int, target_month:
     return False
 
 
+def _add_months(base: date, months: int) -> date:
+    year = base.year + ((base.month - 1 + months) // 12)
+    month = ((base.month - 1 + months) % 12) + 1
+    day = min(base.day, _last_day_of_month(year, month))
+    return date(year, month, day)
+
+
+def _next_due_date(
+    anchor: date,
+    cadence: str,
+    recurrence_day_of_month: int | None,
+    period_start: date,
+) -> date:
+    cadence_months = {"monthly": 1, "quarterly": 3, "annual": 12}.get(cadence, 1)
+    due_day = recurrence_day_of_month or anchor.day
+    current = date(anchor.year, anchor.month, min(due_day, _last_day_of_month(anchor.year, anchor.month)))
+    while current < period_start:
+        current = _add_months(current, cadence_months)
+        current = date(
+            current.year,
+            current.month,
+            min(due_day, _last_day_of_month(current.year, current.month)),
+        )
+    return current
+
+
 def upsert_category(db_path: str | Path, name: str, is_savings_goal: bool = False) -> int:
     with connect(db_path) as conn:
         conn.execute(
@@ -326,6 +352,69 @@ def list_transfers(db_path: str | Path) -> list[dict]:
             """
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def non_monthly_accrual_targets(
+    db_path: str | Path,
+    year: int,
+    month: int,
+) -> list[dict]:
+    period_start = date(year, month, 1)
+    rows_out: list[dict] = []
+
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              bt.id,
+              bt.category_id,
+              c.name AS category,
+              bt.description,
+              bt.posted_date,
+              bt.amount_cents,
+              bt.recurrence_cadence,
+              bt.recurrence_day_of_month
+            FROM bank_transaction bt
+            JOIN category c ON c.id = bt.category_id
+            WHERE bt.is_recurring = 1
+              AND bt.category_id IS NOT NULL
+              AND bt.recurrence_cadence IN ('quarterly', 'annual')
+            ORDER BY c.name, bt.id
+            """
+        ).fetchall()
+
+    for row in rows:
+        cadence = str(row["recurrence_cadence"])
+        amount = abs(int(row["amount_cents"]))
+        if cadence == "quarterly":
+            monthly_accrual = int(round(amount / 3.0))
+        else:
+            monthly_accrual = int(round(amount / 12.0))
+
+        anchor = _to_date(str(row["posted_date"]))
+        next_due = _next_due_date(
+            anchor=anchor,
+            cadence=cadence,
+            recurrence_day_of_month=row["recurrence_day_of_month"],
+            period_start=period_start,
+        )
+        months_until_due = _months_between(date(next_due.year, next_due.month, 1), period_start)
+
+        rows_out.append(
+            {
+                "transaction_id": int(row["id"]),
+                "category_id": int(row["category_id"]),
+                "category": row["category"],
+                "description": row["description"],
+                "cadence": cadence,
+                "expense_amount_cents": amount,
+                "monthly_accrual_cents": monthly_accrual,
+                "next_due_date": next_due.isoformat(),
+                "months_until_due": months_until_due,
+            }
+        )
+
+    return rows_out
 
 
 def _transfer_net_by_day(
@@ -657,10 +746,19 @@ def category_month_status(db_path: str | Path, year: int, month: int) -> list[di
             (year, month, month_start.isoformat(), next_month.isoformat()),
         ).fetchall()
 
+    accrual_rows = non_monthly_accrual_targets(db_path, year, month)
+    accrual_by_category: dict[int, int] = {}
+    for item in accrual_rows:
+        category_id = int(item["category_id"])
+        accrual_by_category[category_id] = accrual_by_category.get(category_id, 0) + int(
+            item["monthly_accrual_cents"]
+        )
+
     output: list[dict] = []
     for row in rows:
         goal = int(row["goal_cents"])
         actual_spend = int(row["actual_spend_cents"])
+        accrual_target = accrual_by_category.get(int(row["category_id"]), 0)
         output.append(
             {
                 "category_id": int(row["category_id"]),
@@ -669,6 +767,8 @@ def category_month_status(db_path: str | Path, year: int, month: int) -> list[di
                 "goal_cents": goal,
                 "actual_spend_cents": actual_spend,
                 "remaining_cents": goal - actual_spend,
+                "accrual_target_cents": accrual_target,
+                "remaining_after_accrual_cents": goal - actual_spend - accrual_target,
             }
         )
 
@@ -790,13 +890,19 @@ def generate_monthly_forecast(
             (year, month),
         ).fetchall()
 
+    accrual_items = non_monthly_accrual_targets(db_path, year, month)
+    accrual_total = sum(int(item["monthly_accrual_cents"]) for item in accrual_items)
+
     net_cents = income_total - recurring_total
     return {
         "period": f"{year:04d}-{month:02d}",
         "income_total_cents": income_total,
         "recurring_expense_total_cents": recurring_total,
         "net_before_variable_cents": net_cents,
+        "non_monthly_accrual_total_cents": accrual_total,
+        "net_after_accrual_cents": net_cents - accrual_total,
         "recurring_items": recurring_rows,
+        "accrual_items": accrual_items,
         "category_goals": [
             {"category": row["category_name"], "amount_cents": int(row["amount_cents"])}
             for row in goals
