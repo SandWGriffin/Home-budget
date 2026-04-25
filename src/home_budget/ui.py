@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import streamlit as st
 
-from .db import init_db
-from .importers import import_bank_csv, import_existing_bank_export_csv, import_income_forecast_csv
-from .services import (
+if __package__ in (None, ""):
+    # Streamlit executes this file as a script path, so ensure src is importable.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from home_budget.db import init_db
+from home_budget.importers import (
+    import_bank_csv,
+    import_existing_bank_export_csv,
+    import_income_forecast_csv,
+)
+from home_budget.services import (
     add_planned_expense,
     add_transfer,
     apply_classification_rules,
