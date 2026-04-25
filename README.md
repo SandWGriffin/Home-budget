@@ -31,6 +31,30 @@ python -m src.main
 streamlit run src/home_budget/ui.py
 ```
 
+## Run in VS Code
+
+Use the Run and Debug profile:
+
+- Open Run and Debug (`Shift+Cmd+D`)
+- Select `Home Budget (Streamlit)`
+- Click Run
+
+Alternative via task:
+
+- Command Palette -> `Tasks: Run Task`
+- Choose `Run Home Budget UI`
+
+If you run from terminal, use the project directory first:
+
+```bash
+cd /Users/stevegriffin/Scripts/Home/home-budget
+/Users/stevegriffin/Scripts/Home/.venv/bin/python -m streamlit run src/home_budget/ui.py --browser.gatherUsageStats false
+```
+
+Common launch issue:
+
+- Running from `/Users/stevegriffin/Scripts/Home` (parent folder) with a relative path causes `File does not exist: src/home_budget/ui.py`.
+
 ## Key UI Workflows
 
 - Import overlapping bank CSV exports and skip duplicate transactions.
