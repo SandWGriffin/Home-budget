@@ -67,6 +67,7 @@ def run() -> None:
     import_format = st.selectbox(
         "Bank import format",
         ["normalized", "existing_export"],
+        index=1,
         help=(
             "Use normalized for posted_date/description/amount CSVs. "
             "Use existing_export for your current bank download format."

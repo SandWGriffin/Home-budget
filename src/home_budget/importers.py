@@ -13,6 +13,14 @@ BANK_REQUIRED_COLUMNS = {"posted_date", "description", "amount"}
 INCOME_REQUIRED_COLUMNS = {"date", "amount"}
 EXISTING_EXPORT_REQUIRED_COLUMNS = {"Date", "Description", "Amount", "Balance", "Ref/Check"}
 
+BANK_COLUMN_ALIASES = {
+    "posted_date": ("posted_date", "Date", "date"),
+    "description": ("description", "Description"),
+    "amount": ("amount", "Amount"),
+    "bank_reference": ("bank_reference", "Ref/Check", "ref/check", "reference"),
+    "balance": ("balance", "Balance"),
+}
+
 DEFAULT_ACCOUNT_NAMES_BY_SUFFIX = {
     "535": "personal_checking_6535",
     "448": "business_4448",
@@ -30,6 +38,27 @@ def _normalize_description(value: str) -> str:
 
 def _to_iso_date_mdy(value: str) -> str:
     return datetime.strptime(value.strip(), "%m/%d/%Y").date().isoformat()
+
+
+def _to_iso_date(value: str) -> str:
+    raw = value.strip()
+    for date_format in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(raw, date_format).date().isoformat()
+        except ValueError:
+            continue
+    raise ValueError(f"Unsupported date format: {value}")
+
+
+def _resolve_column_name(fieldnames: list[str], candidates: tuple[str, ...]) -> str | None:
+    by_lower = {name.strip().lower(): name for name in fieldnames}
+    for candidate in candidates:
+        if candidate in fieldnames:
+            return candidate
+        resolved = by_lower.get(candidate.strip().lower())
+        if resolved:
+            return resolved
+    return None
 
 
 def _normalize_ref(value: str | None) -> str:
@@ -84,8 +113,14 @@ def import_bank_csv(db_path: str | Path, csv_path: str | Path, account: str) -> 
     csv_file = Path(csv_path)
     with csv_file.open("r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        headers = set(reader.fieldnames or [])
-        missing = BANK_REQUIRED_COLUMNS - headers
+        fieldnames = list(reader.fieldnames or [])
+        column_map: dict[str, str] = {}
+        for canonical, aliases in BANK_COLUMN_ALIASES.items():
+            resolved = _resolve_column_name(fieldnames, aliases)
+            if resolved:
+                column_map[canonical] = resolved
+
+        missing = BANK_REQUIRED_COLUMNS - set(column_map.keys())
         if missing:
             missing_csv = ", ".join(sorted(missing))
             raise ValueError(f"Bank CSV missing required columns: {missing_csv}")
@@ -96,12 +131,14 @@ def import_bank_csv(db_path: str | Path, csv_path: str | Path, account: str) -> 
         with connect(db_path) as conn:
             batch_id = create_import_batch(conn, csv_file.name)
             for row in reader:
-                posted_date = (row.get("posted_date") or "").strip()
-                description = (row.get("description") or "").strip()
-                amount_cents = _to_cents((row.get("amount") or "0").strip())
+                posted_date = _to_iso_date((row.get(column_map["posted_date"]) or "").strip())
+                description = (row.get(column_map["description"]) or "").strip()
+                amount_cents = _to_cents((row.get(column_map["amount"]) or "0").strip())
                 normalized = _normalize_description(description)
-                bank_reference = (row.get("bank_reference") or "").strip()
-                balance_raw = (row.get("balance") or "").strip()
+                bank_reference = (
+                    row.get(column_map.get("bank_reference", "bank_reference")) or ""
+                ).strip()
+                balance_raw = (row.get(column_map.get("balance", "balance")) or "").strip()
                 balance_cents = _to_cents(balance_raw) if balance_raw else None
                 key = _dedupe_key(
                     account=account,
@@ -202,7 +239,7 @@ def import_existing_bank_export_csv(
                 else:
                     continue
 
-            posted_date = _to_iso_date_mdy((row.get("Date") or "").strip())
+            posted_date = _to_iso_date((row.get("Date") or "").strip())
             amount_cents = _to_cents(amount_text or "0")
             normalized = _normalize_description(description)
             bank_reference = _normalize_ref(row.get("Ref/Check"))
