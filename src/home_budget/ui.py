@@ -53,6 +53,26 @@ def _cents_to_money(amount_cents: int) -> float:
     return round(amount_cents / 100.0, 2)
 
 
+def _format_cents(amount_cents: int | float) -> str:
+    dollars = abs(amount_cents) / 100.0
+    return f"-${dollars:,.2f}" if amount_cents < 0 else f"${dollars:,.2f}"
+
+
+def _format_rows_for_display(rows: list[object]) -> list[dict[str, object]]:
+    formatted_rows: list[dict[str, object]] = []
+    for row in rows:
+        source = dict(row)
+        formatted_row: dict[str, object] = {}
+        for key, value in source.items():
+            display_key = key[:-6] if key.endswith("_cents") else key
+            if key.endswith("_cents") and value is not None:
+                formatted_row[display_key] = _format_cents(float(value))
+            else:
+                formatted_row[display_key] = value
+        formatted_rows.append(formatted_row)
+    return formatted_rows
+
+
 def run() -> None:
     st.set_page_config(page_title="Home Budget", layout="wide")
     st.title("Home Budget")
@@ -132,7 +152,7 @@ def run() -> None:
     categories = list_categories(db_path)
     if categories:
         st.caption("Existing categories")
-        st.dataframe(categories, use_container_width=True)
+        st.dataframe(_format_rows_for_display(categories), use_container_width=True)
 
     st.header("Auto-Classification Rules")
     if st.button("Apply rules to unclassified transactions"):
@@ -173,7 +193,7 @@ def run() -> None:
     unclassified = list_unclassified_transactions(db_path)
     st.write(f"Unclassified transactions: {len(unclassified)}")
     if unclassified:
-        st.dataframe(unclassified, use_container_width=True)
+        st.dataframe(_format_rows_for_display(unclassified), use_container_width=True)
         tx_id = st.number_input("Transaction ID", min_value=1, step=1)
         category_id = st.number_input("Category ID", min_value=1, step=1, key="cat_id")
         recurring = st.checkbox("Recurring")
@@ -248,7 +268,7 @@ def run() -> None:
 
     planned_expenses = list_planned_expenses(db_path)
     if planned_expenses:
-        st.dataframe(planned_expenses, use_container_width=True)
+        st.dataframe(_format_rows_for_display(planned_expenses), use_container_width=True)
 
     st.header("Transfers")
     transfer_date = st.text_input("Transfer date (YYYY-MM-DD)")
@@ -269,7 +289,7 @@ def run() -> None:
 
     transfers = list_transfers(db_path)
     if transfers:
-        st.dataframe(transfers, use_container_width=True)
+        st.dataframe(_format_rows_for_display(transfers), use_container_width=True)
 
     st.header("Balance Snapshot")
     snapshot_account = st.text_input("Snapshot account", value="household")
@@ -287,7 +307,7 @@ def run() -> None:
     st.header("Income Confirmation")
     income_rows = list_income_forecasts(db_path)
     if income_rows:
-        st.dataframe(income_rows, use_container_width=True)
+        st.dataframe(_format_rows_for_display(income_rows), use_container_width=True)
     income_id = st.number_input("Income row ID", min_value=1, step=1, key="income_id")
     income_received_date = st.text_input("Actual received date (YYYY-MM-DD)")
     income_received_amount = st.number_input("Actual received amount", value=0.0, step=50.0)
@@ -308,32 +328,32 @@ def run() -> None:
         st.write(
             {
                 "period": forecast["period"],
-                "income_total": _cents_to_money(forecast["income_total_cents"]),
-                "recurring_expense_total": _cents_to_money(
+                "income_total": _format_cents(forecast["income_total_cents"]),
+                "recurring_expense_total": _format_cents(
                     forecast["recurring_expense_total_cents"]
                 ),
-                "net_before_variable": _cents_to_money(
+                "net_before_variable": _format_cents(
                     forecast["net_before_variable_cents"]
                 ),
-                "non_monthly_accrual_total": _cents_to_money(
+                "non_monthly_accrual_total": _format_cents(
                     forecast["non_monthly_accrual_total_cents"]
                 ),
-                "net_after_accrual": _cents_to_money(forecast["net_after_accrual_cents"]),
+                "net_after_accrual": _format_cents(forecast["net_after_accrual_cents"]),
             }
         )
         st.subheader("Recurring Items Included")
-        st.dataframe(forecast["recurring_items"], use_container_width=True)
+        st.dataframe(_format_rows_for_display(forecast["recurring_items"]), use_container_width=True)
         st.subheader("Non-Monthly Accrual Targets")
-        st.dataframe(forecast["accrual_items"], use_container_width=True)
+        st.dataframe(_format_rows_for_display(forecast["accrual_items"]), use_container_width=True)
         st.subheader("Category Monthly Goals")
-        st.dataframe(forecast["category_goals"], use_container_width=True)
+        st.dataframe(_format_rows_for_display(forecast["category_goals"]), use_container_width=True)
 
     st.header("Category Goal Performance")
     status_year = st.number_input("Status year", min_value=2020, max_value=2100, value=2026)
     status_month = st.number_input("Status month", min_value=1, max_value=12, value=1)
     if st.button("Show category status"):
         status = category_month_status(db_path, int(status_year), int(status_month))
-        st.dataframe(status, use_container_width=True)
+        st.dataframe(_format_rows_for_display(status), use_container_width=True)
 
     st.header("Daily Cash Flow")
     start_date = st.text_input("Start date (YYYY-MM-DD)")
@@ -356,15 +376,15 @@ def run() -> None:
             account=forecast_account,
         )
         st.subheader("Projected Cash Flow")
-        st.dataframe(cashflow, use_container_width=True)
+        st.dataframe(_format_rows_for_display(cashflow), use_container_width=True)
 
         category_daily = calculate_daily_category_cashflow(db_path, start_date, end_date)
         st.subheader("Daily Cash Flow by Category")
-        st.dataframe(category_daily, use_container_width=True)
+        st.dataframe(_format_rows_for_display(category_daily), use_container_width=True)
 
         variances = detect_balance_variance(db_path, forecast_account, cashflow)
         st.subheader("Variance vs Actual Snapshot")
-        st.dataframe(variances, use_container_width=True)
+        st.dataframe(_format_rows_for_display(variances), use_container_width=True)
 
     st.header("Adjustment Recommendations")
     rec_year = st.number_input("Recommendation year", min_value=2020, max_value=2100, value=2026)
@@ -391,7 +411,7 @@ def run() -> None:
             cashflow=rec_flow,
             negative_variance_threshold_cents=_money_to_cents(rec_threshold),
         )
-        st.dataframe(recs, use_container_width=True)
+        st.dataframe(_format_rows_for_display(recs), use_container_width=True)
 
 
 if __name__ == "__main__":
