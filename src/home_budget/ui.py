@@ -57,10 +57,20 @@ def run() -> None:
 
     db_path = st.text_input("Database path", str(DEFAULT_DB))
     init_db(db_path)
+    st.caption(
+        "Database setup runs automatically on app start. Manual initialize is usually a one-time setup."
+    )
 
-    if st.button("Initialize database"):
-        init_db(db_path)
-        st.success("Database initialized")
+    confirm_init = st.checkbox(
+        "I understand initialization is typically only needed once",
+        key="confirm_db_init",
+    )
+    if st.button("Initialize database (manual)"):
+        if not confirm_init:
+            st.warning("Please confirm before running manual database initialization.")
+        else:
+            init_db(db_path)
+            st.success("Database initialized")
 
     st.header("Import Bank Transactions")
     bank_file = st.file_uploader("Bank CSV", type=["csv"], key="bank_file")

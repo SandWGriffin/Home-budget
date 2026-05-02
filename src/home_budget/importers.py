@@ -21,6 +21,12 @@ BANK_COLUMN_ALIASES = {
     "balance": ("balance", "Balance"),
 }
 
+INCOME_COLUMN_ALIASES = {
+    "date": ("date", "Date"),
+    "amount": ("amount", "Income", "income", "Amount"),
+    "note": ("note", "Note", "Customer", "customer", "Source", "source"),
+}
+
 DEFAULT_ACCOUNT_NAMES_BY_SUFFIX = {
     "535": "personal_checking_6535",
     "448": "business_4448",
@@ -297,8 +303,14 @@ def import_income_forecast_csv(db_path: str | Path, csv_path: str | Path) -> int
     csv_file = Path(csv_path)
     with csv_file.open("r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        headers = set(reader.fieldnames or [])
-        missing = INCOME_REQUIRED_COLUMNS - headers
+        fieldnames = list(reader.fieldnames or [])
+        column_map: dict[str, str] = {}
+        for canonical, aliases in INCOME_COLUMN_ALIASES.items():
+            resolved = _resolve_column_name(fieldnames, aliases)
+            if resolved:
+                column_map[canonical] = resolved
+
+        missing = INCOME_REQUIRED_COLUMNS - set(column_map.keys())
         if missing:
             missing_csv = ", ".join(sorted(missing))
             raise ValueError(f"Income CSV missing required columns: {missing_csv}")
@@ -306,15 +318,15 @@ def import_income_forecast_csv(db_path: str | Path, csv_path: str | Path) -> int
         inserted = 0
         with connect(db_path) as conn:
             for row in reader:
-                note = (row.get("note") or "").strip() or None
+                note = (row.get(column_map.get("note", "note")) or "").strip() or None
                 conn.execute(
                     """
                     INSERT INTO income_forecast (forecast_date, forecast_amount_cents, note)
                     VALUES (?, ?, ?)
                     """,
                     (
-                        (row.get("date") or "").strip(),
-                        _to_cents((row.get("amount") or "0").strip()),
+                        _to_iso_date((row.get(column_map["date"]) or "").strip()),
+                        _to_cents((row.get(column_map["amount"]) or "0").strip()),
                         note,
                     ),
                 )

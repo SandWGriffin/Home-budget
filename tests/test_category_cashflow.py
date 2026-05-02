@@ -78,3 +78,26 @@ def test_category_month_status_and_daily_category_cashflow(tmp_path: Path):
     assert by_category[0]["category"] == "Food"
     assert by_category[0]["expected_expense_cents"] == 2000
     assert by_category[0]["actual_expense_cents"] == 1234
+
+
+def test_income_import_accepts_customer_date_income_schema(tmp_path: Path):
+    db_path = tmp_path / "budget.db"
+    init_db(db_path)
+
+    income_csv = tmp_path / "income_customer_schema.csv"
+    income_csv.write_text(
+        "Customer,Date,Income\n"
+        "New Growth Press,5/5/26,4300\n",
+        encoding="utf-8",
+    )
+
+    import_income_forecast_csv(db_path, income_csv)
+
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT forecast_date, forecast_amount_cents, note FROM income_forecast LIMIT 1"
+        ).fetchone()
+
+    assert row["forecast_date"] == "2026-05-05"
+    assert row["forecast_amount_cents"] == 430000
+    assert row["note"] == "New Growth Press"
