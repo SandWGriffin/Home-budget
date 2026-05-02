@@ -40,7 +40,9 @@ from home_budget.services import (
 )
 
 
-DEFAULT_DB = Path("data/home_budget.db")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
+DEFAULT_DB = DATA_DIR / "home_budget.db"
 
 
 def _money_to_cents(amount: float) -> int:
@@ -91,7 +93,7 @@ def run() -> None:
     )
     include_pending = st.checkbox("Include pending rows (existing export)", value=False)
     if st.button("Import bank CSV") and bank_file is not None:
-        tmp_path = Path("data/_bank_upload.csv")
+        tmp_path = DATA_DIR / "_bank_upload.csv"
         tmp_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path.write_bytes(bank_file.getvalue())
         if import_format == "existing_export":
@@ -114,7 +116,7 @@ def run() -> None:
     st.header("Import Income Forecast")
     income_file = st.file_uploader("Income CSV", type=["csv"], key="income_file")
     if st.button("Import income CSV") and income_file is not None:
-        tmp_path = Path("data/_income_upload.csv")
+        tmp_path = DATA_DIR / "_income_upload.csv"
         tmp_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path.write_bytes(income_file.getvalue())
         count = import_income_forecast_csv(db_path, tmp_path)

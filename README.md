@@ -96,14 +96,21 @@ Existing export account detection:
 - Transfer text `from *448 to *535` with negative amount maps file account to business (`...4448`)
 - Transfer text `from *535 to *448` is interpreted inversely
 
-Income forecast required columns:
+Income forecast required columns (either format):
 
-- date (YYYY-MM-DD)
-- amount
+- `date`, `amount`
+- `Date`, `Income`
 
-Optional income column:
+Optional income note/source columns:
 
-- note
+- `note`
+- `Customer` (stored as note)
+
+Supported income date formats:
+
+- `YYYY-MM-DD`
+- `M/D/YYYY`
+- `M/D/YY`
 
 ## Test
 
